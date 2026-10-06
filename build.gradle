@@ -1,0 +1,128 @@
+
+
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+	id "org.jetbrains.kotlin.jvm" version "2.4.20"
+}
+
+repositories {
+	// Add repositories to retrieve artifacts from in here.
+	// You should only use this when depending on other mods because
+	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
+	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
+	// for more information about repositories.
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"markovjuniormc" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+fabricApi {
+	configureDataGeneration {
+		client = true
+		modId = "markovjuniormc"
+	}
+}
+
+dependencies {
+	// To change the versions see the gradle.properties file
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	// Fabric API. This is technically optional, but you probably want it anyway.
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	// Make the Fabric API visible to the split client source set so it can use
+	// WorldRenderEvents / KeyBindingHelper / interaction callbacks.
+	clientImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	clientImplementation "net.fabricmc:fabric-language-kotlin:${project.fabric_kotlin_version}"
+	// 让 client 源集能调用 main（commons）里的 markov 编译引擎（MarkovXmlCompiler 等）
+	clientImplementation sourceSets.main.output
+}
+
+processResources {
+	def version = project.version
+	inputs.property "version", version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+kotlin {
+	compilerOptions {
+		jvmTarget = JvmTarget.JVM_25
+	}
+}
+
+java {
+	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+	// if it is present.
+	// If you remove this line, sources will not be generated.
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_$projectName"}
+	}
+}
+
+tasks.register('printCp') {
+	group = 'help'
+	doLast {
+		configurations.clientCompileClasspath.files.each { println it.absolutePath }
+	}
+}
+
+// Standalone CLI runner for the migrated markov engine (platform-agnostic).
+// Usage: ./gradlew runCli --args="run fill --size 8 8 8 --output result.json --seed 42"
+tasks.register('runCli', JavaExec) {
+	group = 'application'
+	description = 'Runs the standalone markov CLI (no Minecraft required)'
+	classpath = sourceSets.main.runtimeClasspath
+	mainClass = 'com.caimeo.markovpaper.cli.MainKt'
+}
+
+// Loom split source sets do not always forward the remapped Minecraft / Fabric
+// API to the Kotlin client compilation. Point the Kotlin client compile at the
+// exact same classpath that the (correctly remapped) Java client source set uses.
+tasks.named('compileClientKotlin', org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configure {
+	libraries.setFrom(configurations.clientCompileClasspath)
+}
+
+// configure the maven publication
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+
+	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+	repositories {
+		// Add repositories to publish to here.
+		// Notice: This block does NOT have the same function as the block in the top level.
+		// The repositories here will be used for publishing your artifact, not for
+		// retrieving dependencies.
+	}
+}

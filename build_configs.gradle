@@ -1,0 +1,17 @@
+def probe() {
+  new File("D:/out_probe.txt").withWriter { w ->
+    def ksrc = rootProject.hasProperty("kotlin") ? rootProject.kotlin.sourceSets.names.sorted() : "NO-KOTLIN"
+    w.println "KOTLINSRC: $ksrc"
+    w.println "CONFIGS-cli: " + rootProject.configurations.names.findAll { it.toLowerCase().contains("client") }.sorted()
+    // find dependency configurations of client kotlin source set
+    rootProject.sourceSets.each { ss ->
+      if (ss.name == "client") {
+        w.println "CS-COMPILE: " + ss.compileClasspath.findAll { it.toString().contains("fabric") }.collect { it.toString().tokenize("\\/").last() }
+        w.println "CS-RT: " + ss.runtimeClasspath.findAll { it.toString().contains("fabric") }.collect { it.toString().tokenize("\\/").last() }
+      }
+    }
+  }
+}
+gradle.afterProject {
+  getGradle().projectsEvaluated { probe() }
+}
